@@ -1,4 +1,5 @@
 from flask import Flask, request
+import json
 
 app = Flask(__name__)
 
@@ -15,6 +16,13 @@ def webhook():
             return challenge, 200
         else:
             return "Unauthorized", 403
+
+    if request.method == "POST":
+        data = request.get_json()
+        print("🔔 Evento recebido:")
+        print(json.dumps(data, indent=2))
+        return "Evento recebido", 200
+
     return "OK", 200
 
 if __name__ == "__main__":
