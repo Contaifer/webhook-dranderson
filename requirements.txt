@@ -1,3 +1,4 @@
 flask
 gspread
 oauth2client
+openai
