@@ -37,25 +37,23 @@ def ler_lista_exclusao():
             return [linha.strip().lower() for linha in f if linha.strip()]
     except FileNotFoundError:
         return []
-
-# 🧠 Classificação de sentimento (nova API)
+        
 def classificar_sentimento(texto):
-    prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível.\nMensagem: {texto}\nClassificação:"
     try:
         resposta = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "Você é um classificador de sentimentos objetivo."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível."},
+                {"role": "user", "content": texto}
             ],
-            max_tokens=10,
-            temperature=0.4
+            temperature=0.4,
+            max_tokens=10
         )
         return resposta.choices[0].message.content.strip().lower()
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
-
+        
 # ✍️ Gerar resposta
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
