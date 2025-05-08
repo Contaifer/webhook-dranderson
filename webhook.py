@@ -38,19 +38,20 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-# 🧠 Classificação de sentimento (versão nova OpenAI)
+# 🧠 Classificação de sentimento (nova API)
 def classificar_sentimento(texto):
+    prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível.\nMensagem: {texto}\nClassificação:"
     try:
-        response = openai.ChatCompletion.create(
+        resposta = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Você é um classificador de sentimentos. Classifique a mensagem como positivo, neutro, negativo ou sensível."},
-                {"role": "user", "content": f"Mensagem: {texto}\nClassificação:"}
+                {"role": "system", "content": "Você é um classificador de sentimentos objetivo."},
+                {"role": "user", "content": prompt}
             ],
             max_tokens=10,
             temperature=0.4
         )
-        return response.choices[0].message["content"].strip().lower()
+        return resposta.choices[0].message.content.strip().lower()
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
@@ -84,11 +85,10 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
-        base = base.replace("https://api.whatsapp.com/...", "link da bio")
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-# 📬 Envio de resposta real via API
+# 📬 Envio real pela Graph API
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         if tipo == "comentario" and comment_id:
@@ -111,7 +111,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("Erro ao enviar resposta:", e)
 
-# 💡 Controle de limite por hora
+# Controle de limite por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -161,7 +161,6 @@ def webhook():
                     mensagem = messaging.get("message", {}).get("text", "")
                     username = messaging.get("sender", {}).get("id", "")
 
-            # Registrar no Google Sheets
             sheet.append_row([
                 datetime.now().isoformat(),
                 tipo,
