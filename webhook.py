@@ -5,7 +5,6 @@ import time
 import gspread
 import openai
 import requests
-import random
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -19,8 +18,10 @@ INTERACOES_ANTES_CTA = 3
 respostas_enviadas = {"comentario": [], "direct": []}
 interacoes_por_usuario = {}
 
-# 🔐 Chave da OpenAI
+# 🔐 API KEY OpenAI
 openai.api_key = os.environ["OPENAI_API_KEY"]
+# 🔐 Token do Instagram
+INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
 
 # 📊 Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -29,7 +30,7 @@ credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict,
 gc = gspread.authorize(credentials)
 sheet = gc.open("webhook_instagram_logs").sheet1
 
-# 📃 Lista de usuários a ignorar
+# ❌ Lista de exclusão
 def ler_lista_exclusao():
     try:
         with open("excluir_usuarios.txt", "r") as f:
@@ -37,9 +38,9 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-# 🧠 Classificação de sentimento com IA
+# 🧠 Classificação de sentimento
 def classificar_sentimento(texto):
-    prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo, sensível.\nMensagem: {texto}\nClassificação:"
+    prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível.\nMensagem: {texto}\nClassificação:"
     try:
         resposta = openai.Completion.create(
             engine="text-davinci-003",
@@ -52,69 +53,63 @@ def classificar_sentimento(texto):
         print("Erro ao classificar sentimento:", e)
         return "neutro"
 
-# ✍️ Geração da resposta com base no sentimento
+# ✍️ Gerar resposta
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
 
     if "consulta" in texto.lower() or "atendimento" in texto.lower():
-        base = ("Sou médico especialista em clínica médica (RQE 18790), com 13 anos de formado e experiência como professor de medicina. "
-                "Minha abordagem é focada na regulação do sistema nervoso para tratar traumas como o TEPT-C. "
-                "As consultas são online, com duração de 1 hora, e visam aliviar sintomas como ansiedade, insônia, tensão muscular, "
-                "fadiga e outros efeitos do trauma. Você recebe relatório médico e avaliamos juntos a necessidade de exames ou medicação.")
+        base = ("Sou médico especialista em clínica médica (RQE 18790), com 13 anos de experiência e ex-professor de medicina. "
+                "Ajudo pessoas que passaram por relacionamentos abusivos a se regularem emocionalmente e superarem sintomas físicos e psicológicos do trauma, como ansiedade, insônia, confusão mental e hipervigilância.")
 
     elif "não tenho dinheiro" in texto.lower() or "não posso pagar" in texto.lower():
-        base = ("Entendo sua dificuldade. Uma alternativa acessível é o curso 'Quebrando as Algemas' em www.quebrandoasalgemas.com.br. "
-                "Você pode usar o cupom **MQA50** para 50% de desconto. O acesso é válido por 1 ano e a renovação é automática — "
-                "mas você pode cancelar dentro da Hotmart a qualquer momento.")
+        base = ("Entendo sua situação. Uma alternativa é o curso 'Quebrando as Algemas' com 50% de desconto usando o cupom **MQA50**. "
+                "O acesso é por 1 ano e a renovação é automática (você pode cancelar na Hotmart a qualquer momento).")
 
     elif sentimento == "sensível":
-        base = "Li sua mensagem com atenção. Você não está sozinho(a). O que você sente é válido e pode ser cuidado com calma."
+        base = "Recebi sua mensagem com atenção. O que você sente é real e merece cuidado. Se quiser conversar, estou aqui."
 
     elif sentimento == "negativo":
-        base = "Entendo que esteja sendo difícil agora. Se quiser conversar melhor, posso te orientar no que for possível."
+        base = "Entendo que esse momento esteja difícil. Se precisar de uma direção, posso te orientar com cuidado e respeito."
 
     elif sentimento == "positivo":
-        base = "Fico muito feliz com sua mensagem! Obrigado pela confiança. Se quiser conversar mais de perto, posso te explicar melhor sobre meu trabalho."
+        base = "Obrigado pela sua mensagem! Se quiser entender melhor como posso te ajudar, posso te explicar com calma."
 
     elif sentimento == "neutro":
-        base = "Que bom que você escreveu. Me conta um pouco mais do que você está passando."
+        base = "Li sua mensagem. Me conta um pouco mais do que você está vivendo pra eu poder entender melhor."
 
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
-        base += " Se quiser ajuda direta da minha equipe, você pode mandar mensagem aqui: https://api.whatsapp.com/send?phone=5527996677672&text=Olá!%20Gostaria%20de%20mais%20informações%20sobre%20as%20consultas%20com%20o%20Dr.%20Anderson%20Contaifer"
+        base += " Se quiser conversar com alguém da minha equipe, clique aqui: https://api.whatsapp.com/send?phone=5527996677672&text=Olá!%20Gostaria%20de%20mais%20informações%20sobre%20as%20consultas%20com%20o%20Dr.%20Anderson%20Contaifer"
 
     if tipo == "comentario":
-        base = base.replace("www.quebrandoasalgemas.com.br", "link na bio")
+        base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
+        base = base.replace("https://api.whatsapp.com/...", "link da bio")
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-# 📬 Enviar resposta pela API do Instagram
-def enviar_resposta_instagram(tipo, username, mensagem_original, resposta, id_post):
-    token = os.environ["INSTAGRAM_TOKEN"]
-
-    if tipo == "comentario" and id_post:
-        url = f"https://graph.facebook.com/v18.0/{id_post}/replies"
-        payload = {"message": resposta, "access_token": token}
-    elif tipo == "direct":
-        url = f"https://graph.facebook.com/v18.0/me/messages"
-        payload = {
-            "messaging_type": "RESPONSE",
-            "recipient": {"id": username},
-            "message": {"text": resposta},
-            "access_token": token
-        }
-    else:
-        print("⚠️ Tipo de resposta desconhecido ou dados incompletos.")
-        return
-
+# 📬 Envio de resposta real via API
+def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
-        resp = requests.post(url, json=payload)
-        if resp.status_code == 200:
-            print(f"✅ Resposta enviada: {resposta}")
-        else:
-            print(f"❌ Erro ao enviar ({tipo}):", resp.text)
-    except Exception as e:
-        print("❌ Erro na requisição:", str(e))
+        if tipo == "comentario" and comment_id:
+            url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
+            r = requests.post(url, data={
+                "message": resposta,
+                "access_token": INSTAGRAM_TOKEN
+            })
+            print("📤 Comentário enviado:", r.status_code, r.text)
 
+        elif tipo == "direct" and username:
+            url = "https://graph.facebook.com/v19.0/me/messages"
+            r = requests.post(url, json={
+                "messaging_type": "RESPONSE",
+                "recipient": {"id": username},
+                "message": {"text": resposta},
+                "access_token": INSTAGRAM_TOKEN
+            })
+            print("📤 Direct enviado:", r.status_code, r.text)
+    except Exception as e:
+        print("Erro ao enviar resposta:", e)
+
+# 💡 Controle de limite por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -124,6 +119,7 @@ def pode_responder(tipo):
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
 
+# 🌐 Webhook principal
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
     if request.method == "GET":
@@ -132,8 +128,7 @@ def webhook():
         challenge = request.args.get("hub.challenge")
         if mode == "subscribe" and token == VERIFY_TOKEN:
             return challenge, 200
-        else:
-            return "Unauthorized", 403
+        return "Unauthorized", 403
 
     if request.method == "POST":
         data = request.get_json()
@@ -145,7 +140,7 @@ def webhook():
             username = ""
             mensagem = ""
             id_post = ""
-            emoji = ""
+            comment_id = ""
 
             if "entry" in data:
                 entry = data["entry"][0]
@@ -156,6 +151,7 @@ def webhook():
                     username = value.get("from", {}).get("username", "").lower()
                     mensagem = value.get("text", "")
                     id_post = value.get("media", {}).get("id", "")
+                    comment_id = value.get("id", "")
 
                 elif "messaging" in entry:
                     tipo = "direct"
@@ -169,12 +165,12 @@ def webhook():
                 username,
                 mensagem,
                 id_post,
-                emoji,
+                "",  # emoji
                 json.dumps(data)
             ])
 
             if username in ler_lista_exclusao():
-                print(f"Usuário {username} está na lista de exclusão. Ignorando.")
+                print(f"🚫 Usuário ignorado (lista): {username}")
                 return "Ignorado", 200
 
             if pode_responder(tipo):
@@ -184,12 +180,12 @@ def webhook():
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
                 registrar_resposta(tipo)
-                enviar_resposta_instagram(tipo, username, mensagem, resposta, id_post)
+                enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
             else:
                 print(f"⚠️ Limite de {tipo}s por hora atingido. Ignorando.")
 
         except Exception as e:
-            print("Erro geral:", str(e))
+            print("❌ Erro geral:", str(e))
 
     return "OK", 200
 
