@@ -7,6 +7,7 @@ from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 import openai
 import random
+import requests
 
 app = Flask(__name__)
 
@@ -92,6 +93,32 @@ def pode_responder(tipo):
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
 
+def enviar_resposta_instagram(tipo, destino_id, resposta):
+    url = ""
+    payload = {}
+
+    if tipo == "comentario":
+        url = f"https://graph.facebook.com/v19.0/{destino_id}/replies"
+        payload = {
+            "message": resposta,
+            "access_token": os.environ["INSTAGRAM_TOKEN"]
+        }
+
+    elif tipo == "direct":
+        url = f"https://graph.facebook.com/v19.0/me/messages"
+        payload = {
+            "recipient": {"id": destino_id},
+            "message": {"text": resposta},
+            "messaging_type": "RESPONSE",
+            "access_token": os.environ["INSTAGRAM_TOKEN"]
+        }
+
+    try:
+        r = requests.post(url, json=payload)
+        print("✅ Resposta enviada:", r.status_code, r.text)
+    except Exception as e:
+        print("❌ Erro ao enviar resposta:", e)
+
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
     if request.method == "GET":
@@ -152,14 +179,14 @@ def webhook():
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
                 registrar_resposta(tipo)
-                # Aqui entraria a chamada real à API do Instagram
+                enviar_resposta_instagram(tipo, id_post if tipo == "comentario" else username, resposta)
             else:
                 print(f"⚠️ Limite de {tipo}s por hora atingido. Ignorando.")
 
         except Exception as e:
             print("Erro geral:", str(e))
 
-    return "OK", 200  # <-- evita erro no HEAD
+    return "OK", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
