@@ -3,11 +3,11 @@ import json
 import os
 import time
 import gspread
+import openai
+import requests
+import random
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-import openai
-import random
-import requests
 
 app = Flask(__name__)
 
@@ -19,15 +19,17 @@ INTERACOES_ANTES_CTA = 3
 respostas_enviadas = {"comentario": [], "direct": []}
 interacoes_por_usuario = {}
 
+# 🔐 Chave da OpenAI
 openai.api_key = os.environ["OPENAI_API_KEY"]
 
-# Google Sheets
+# 📊 Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
 gc = gspread.authorize(credentials)
 sheet = gc.open("webhook_instagram_logs").sheet1
 
+# 📃 Lista de usuários a ignorar
 def ler_lista_exclusao():
     try:
         with open("excluir_usuarios.txt", "r") as f:
@@ -35,6 +37,7 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
+# 🧠 Classificação de sentimento com IA
 def classificar_sentimento(texto):
     prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo, sensível.\nMensagem: {texto}\nClassificação:"
     try:
@@ -49,6 +52,7 @@ def classificar_sentimento(texto):
         print("Erro ao classificar sentimento:", e)
         return "neutro"
 
+# ✍️ Geração da resposta com base no sentimento
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
 
@@ -59,9 +63,9 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
                 "fadiga e outros efeitos do trauma. Você recebe relatório médico e avaliamos juntos a necessidade de exames ou medicação.")
 
     elif "não tenho dinheiro" in texto.lower() or "não posso pagar" in texto.lower():
-        base = ("Entendo sua dificuldade. Uma alternativa acessível é o curso 'Quebrando as Algemas' "
-                "em www.quebrandoasalgemas.com.br. Você pode usar o cupom **MQA50** para 50% de desconto. "
-                "O acesso é válido por 1 ano e a renovação é automática — mas você pode cancelar dentro da Hotmart a qualquer momento.")
+        base = ("Entendo sua dificuldade. Uma alternativa acessível é o curso 'Quebrando as Algemas' em www.quebrandoasalgemas.com.br. "
+                "Você pode usar o cupom **MQA50** para 50% de desconto. O acesso é válido por 1 ano e a renovação é automática — "
+                "mas você pode cancelar dentro da Hotmart a qualquer momento.")
 
     elif sentimento == "sensível":
         base = "Li sua mensagem com atenção. Você não está sozinho(a). O que você sente é válido e pode ser cuidado com calma."
@@ -80,9 +84,36 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link na bio")
-        base = base.replace("https://api.whatsapp.com/...", "link na bio")
 
     return base[:2200] if tipo == "comentario" else base[:1000]
+
+# 📬 Enviar resposta pela API do Instagram
+def enviar_resposta_instagram(tipo, username, mensagem_original, resposta, id_post):
+    token = os.environ["INSTAGRAM_TOKEN"]
+
+    if tipo == "comentario" and id_post:
+        url = f"https://graph.facebook.com/v18.0/{id_post}/replies"
+        payload = {"message": resposta, "access_token": token}
+    elif tipo == "direct":
+        url = f"https://graph.facebook.com/v18.0/me/messages"
+        payload = {
+            "messaging_type": "RESPONSE",
+            "recipient": {"id": username},
+            "message": {"text": resposta},
+            "access_token": token
+        }
+    else:
+        print("⚠️ Tipo de resposta desconhecido ou dados incompletos.")
+        return
+
+    try:
+        resp = requests.post(url, json=payload)
+        if resp.status_code == 200:
+            print(f"✅ Resposta enviada: {resposta}")
+        else:
+            print(f"❌ Erro ao enviar ({tipo}):", resp.text)
+    except Exception as e:
+        print("❌ Erro na requisição:", str(e))
 
 def pode_responder(tipo):
     agora = time.time()
@@ -92,32 +123,6 @@ def pode_responder(tipo):
 
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
-
-def enviar_resposta_instagram(tipo, destino_id, resposta):
-    url = ""
-    payload = {}
-
-    if tipo == "comentario":
-        url = f"https://graph.facebook.com/v19.0/{destino_id}/replies"
-        payload = {
-            "message": resposta,
-            "access_token": os.environ["INSTAGRAM_TOKEN"]
-        }
-
-    elif tipo == "direct":
-        url = f"https://graph.facebook.com/v19.0/me/messages"
-        payload = {
-            "recipient": {"id": destino_id},
-            "message": {"text": resposta},
-            "messaging_type": "RESPONSE",
-            "access_token": os.environ["INSTAGRAM_TOKEN"]
-        }
-
-    try:
-        r = requests.post(url, json=payload)
-        print("✅ Resposta enviada:", r.status_code, r.text)
-    except Exception as e:
-        print("❌ Erro ao enviar resposta:", e)
 
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
@@ -179,7 +184,7 @@ def webhook():
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
                 registrar_resposta(tipo)
-                enviar_resposta_instagram(tipo, id_post if tipo == "comentario" else username, resposta)
+                enviar_resposta_instagram(tipo, username, mensagem, resposta, id_post)
             else:
                 print(f"⚠️ Limite de {tipo}s por hora atingido. Ignorando.")
 
