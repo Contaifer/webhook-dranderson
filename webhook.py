@@ -38,17 +38,19 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-# 🧠 Classificação de sentimento
+# 🧠 Classificação de sentimento (versão atualizada OpenAI v1.x)
 def classificar_sentimento(texto):
-    prompt = f"Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível.\nMensagem: {texto}\nClassificação:"
     try:
-        resposta = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=10,
-            temperature=0.4
+        resposta = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Você é um classificador de sentimentos. Responda apenas com: positivo, neutro, negativo ou sensível."},
+                {"role": "user", "content": f"Mensagem: {texto}"}
+            ],
+            max_tokens=5,
+            temperature=0.3
         )
-        return resposta.choices[0].text.strip().lower()
+        return resposta.choices[0].message.content.strip().lower()
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
@@ -86,7 +88,7 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-# 📬 Envio de resposta real via API
+# 📬 Envio real pela Graph API
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         if tipo == "comentario" and comment_id:
@@ -109,7 +111,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("Erro ao enviar resposta:", e)
 
-# 💡 Controle de limite por hora
+# 💡 Controle por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -191,4 +193,5 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
 
