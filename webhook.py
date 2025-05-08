@@ -18,7 +18,6 @@ INTERACOES_ANTES_CTA = 3
 respostas_enviadas = {"comentario": [], "direct": []}
 interacoes_por_usuario = {}
 
-# OpenAI
 openai.api_key = os.environ["OPENAI_API_KEY"]
 
 # Google Sheets
@@ -93,7 +92,7 @@ def pode_responder(tipo):
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
     if request.method == "GET":
         mode = request.args.get("hub.mode")
@@ -153,14 +152,15 @@ def webhook():
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
                 registrar_resposta(tipo)
-                # Aqui entraria a chamada real à API do Instagram para enviar a resposta
+                # Aqui entraria a chamada real à API do Instagram
             else:
                 print(f"⚠️ Limite de {tipo}s por hora atingido. Ignorando.")
 
         except Exception as e:
             print("Erro geral:", str(e))
 
-        return "OK", 200
+    return "OK", 200  # <-- evita erro no HEAD
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
