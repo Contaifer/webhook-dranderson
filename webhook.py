@@ -38,19 +38,19 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-# 🧠 Classificação de sentimento (versão atualizada OpenAI v1.x)
+# 🧠 Classificação de sentimento (versão nova OpenAI)
 def classificar_sentimento(texto):
     try:
-        resposta = openai.ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Você é um classificador de sentimentos. Responda apenas com: positivo, neutro, negativo ou sensível."},
-                {"role": "user", "content": f"Mensagem: {texto}"}
+                {"role": "system", "content": "Você é um classificador de sentimentos. Classifique a mensagem como positivo, neutro, negativo ou sensível."},
+                {"role": "user", "content": f"Mensagem: {texto}\nClassificação:"}
             ],
-            max_tokens=5,
-            temperature=0.3
+            max_tokens=10,
+            temperature=0.4
         )
-        return resposta.choices[0].message.content.strip().lower()
+        return response.choices[0].message["content"].strip().lower()
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
@@ -88,7 +88,7 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-# 📬 Envio real pela Graph API
+# 📬 Envio de resposta real via API
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         if tipo == "comentario" and comment_id:
@@ -111,7 +111,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("Erro ao enviar resposta:", e)
 
-# 💡 Controle por hora
+# 💡 Controle de limite por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -161,6 +161,7 @@ def webhook():
                     mensagem = messaging.get("message", {}).get("text", "")
                     username = messaging.get("sender", {}).get("id", "")
 
+            # Registrar no Google Sheets
             sheet.append_row([
                 datetime.now().isoformat(),
                 tipo,
@@ -193,5 +194,3 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
-
