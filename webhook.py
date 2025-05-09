@@ -30,14 +30,12 @@ credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict,
 gc = gspread.authorize(credentials)
 sheet = gc.open("webhook_instagram_logs").sheet1
 
-
 def ler_lista_exclusao():
     try:
         with open("excluir_usuarios.txt", "r") as f:
             return [linha.strip().lower() for linha in f if linha.strip()]
     except FileNotFoundError:
         return []
-
 
 def classificar_sentimento(texto):
     try:
@@ -55,10 +53,8 @@ def classificar_sentimento(texto):
         print("Erro ao classificar sentimento:", e)
         return "neutro"
 
-
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
-
     if "consulta" in texto.lower() or "atendimento" in texto.lower():
         base = ("Sou médico especialista em clínica médica (RQE 18790), com 13 anos de experiência e ex-professor de medicina. "
                 "Ajudo pessoas que passaram por relacionamentos abusivos a se regularem emocionalmente e superarem sintomas físicos e psicológicos do trauma, como ansiedade, insônia, confusão mental e hipervigilância.")
@@ -82,15 +78,12 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-
 def gerar_appsecret_proof(token, secret):
     return hashlib.sha256((token + secret).encode('utf-8')).hexdigest()
-
 
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         proof = gerar_appsecret_proof(INSTAGRAM_TOKEN, APP_SECRET)
-
         if tipo == "comentario" and comment_id:
             url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
             r = requests.post(url, data={
@@ -98,7 +91,6 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
             })
-            print("📤 Comentário enviado:", r.status_code, r.text)
         elif tipo == "direct" and username:
             url = "https://graph.facebook.com/v19.0/me/messages"
             r = requests.post(url, json={
@@ -108,10 +100,20 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
             })
-            print("📤 Direct enviado:", r.status_code, r.text)
-    except Exception as e:
-        print("Erro ao enviar resposta:", e)
+        else:
+            print("⚠️ Tipo inválido ou dados faltando.")
+            return False
 
+        if r.status_code != 200:
+            print(f"❌ Falha ao enviar {tipo.upper()}: {r.status_code} - {r.text}")
+            return False
+
+        print(f"📤 {tipo.capitalize()} enviado com sucesso: {r.status_code}")
+        return True
+
+    except Exception as e:
+        print("❌ Erro ao enviar resposta:", e)
+        return False
 
 def pode_responder(tipo, username):
     agora = time.time()
@@ -121,10 +123,8 @@ def pode_responder(tipo, username):
     limite = MAX_COMENTARIOS_POR_HORA if tipo == "comentario" else MAX_DIRECTS_POR_HORA
     return len(historico) < limite
 
-
 def registrar_resposta(tipo, username):
     respostas_enviadas[tipo].setdefault(username, []).append(time.time())
-
 
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
@@ -150,7 +150,6 @@ def webhook():
 
             if "entry" in data:
                 entry = data["entry"][0]
-
                 if "changes" in entry:
                     tipo = "comentario"
                     value = entry["changes"][0]["value"]
@@ -178,9 +177,10 @@ def webhook():
                 sentimento = classificar_sentimento(mensagem)
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
-                registrar_resposta(tipo, username)
                 time.sleep(DELAY_ENTRE_RESPOSTAS)
-                enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
+                sucesso = enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
+                if sucesso:
+                    registrar_resposta(tipo, username)
             else:
                 print(f"⚠️ Limite de {tipo}s por hora para {username} atingido. Ignorando.")
 
@@ -189,7 +189,5 @@ def webhook():
 
     return "OK", 200
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
