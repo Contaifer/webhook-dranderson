@@ -18,7 +18,7 @@ INTERACOES_ANTES_CTA = 3
 respostas_enviadas = {"comentario": [], "direct": []}
 interacoes_por_usuario = {}
 
-# 🔐 API KEY OpenAI
+# 🔐 API Key OpenAI
 openai.api_key = os.environ["OPENAI_API_KEY"]
 # 🔐 Token do Instagram
 INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
@@ -37,44 +37,40 @@ def ler_lista_exclusao():
             return [linha.strip().lower() for linha in f if linha.strip()]
     except FileNotFoundError:
         return []
-        
+
+# 🧠 Classificação com GPT-3.5
 def classificar_sentimento(texto):
     try:
-        resposta = openai.chat.completions.create(
-            model="gpt-4",
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Classifique o sentimento da seguinte mensagem como: positivo, neutro, negativo ou sensível."},
+                {"role": "system", "content": "Classifique a seguinte mensagem como: positivo, neutro, negativo ou sensível."},
                 {"role": "user", "content": texto}
             ],
             temperature=0.4,
             max_tokens=10
         )
-        return resposta.choices[0].message.content.strip().lower()
+        return response.choices[0].message["content"].strip().lower()
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
-        
-# ✍️ Gerar resposta
+
+# ✍️ Geração de resposta
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
 
     if "consulta" in texto.lower() or "atendimento" in texto.lower():
         base = ("Sou médico especialista em clínica médica (RQE 18790), com 13 anos de experiência e ex-professor de medicina. "
                 "Ajudo pessoas que passaram por relacionamentos abusivos a se regularem emocionalmente e superarem sintomas físicos e psicológicos do trauma, como ansiedade, insônia, confusão mental e hipervigilância.")
-
     elif "não tenho dinheiro" in texto.lower() or "não posso pagar" in texto.lower():
         base = ("Entendo sua situação. Uma alternativa é o curso 'Quebrando as Algemas' com 50% de desconto usando o cupom **MQA50**. "
                 "O acesso é por 1 ano e a renovação é automática (você pode cancelar na Hotmart a qualquer momento).")
-
     elif sentimento == "sensível":
         base = "Recebi sua mensagem com atenção. O que você sente é real e merece cuidado. Se quiser conversar, estou aqui."
-
     elif sentimento == "negativo":
         base = "Entendo que esse momento esteja difícil. Se precisar de uma direção, posso te orientar com cuidado e respeito."
-
     elif sentimento == "positivo":
         base = "Obrigado pela sua mensagem! Se quiser entender melhor como posso te ajudar, posso te explicar com calma."
-
     elif sentimento == "neutro":
         base = "Li sua mensagem. Me conta um pouco mais do que você está vivendo pra eu poder entender melhor."
 
@@ -83,10 +79,11 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
+        base = base.replace("https://api.whatsapp.com/...", "link da bio")
 
     return base[:2200] if tipo == "comentario" else base[:1000]
 
-# 📬 Envio real pela Graph API
+# 📬 Envio para o Instagram
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         if tipo == "comentario" and comment_id:
@@ -109,7 +106,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("Erro ao enviar resposta:", e)
 
-# Controle de limite por hora
+# ⏱️ Limite de envio por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -119,7 +116,7 @@ def pode_responder(tipo):
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
 
-# 🌐 Webhook principal
+# 🌐 Webhook
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
     if request.method == "GET":
@@ -152,7 +149,6 @@ def webhook():
                     mensagem = value.get("text", "")
                     id_post = value.get("media", {}).get("id", "")
                     comment_id = value.get("id", "")
-
                 elif "messaging" in entry:
                     tipo = "direct"
                     messaging = entry["messaging"][0]
@@ -191,3 +187,4 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
