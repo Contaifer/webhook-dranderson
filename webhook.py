@@ -20,17 +20,20 @@ INTERACOES_ANTES_CTA = 3
 respostas_enviadas = {"comentario": [], "direct": []}
 interacoes_por_usuario = {}
 
+# 🔐 API Key OpenAI
 openai.api_key = os.environ["OPENAI_API_KEY"]
+# 🔐 Token do Instagram e app secret
 INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
-APP_SECRET = os.environ.get("APP_SECRET")
+APP_SECRET = os.environ["APP_SECRET"]
 
-# Google Sheets
+# 📊 Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
 gc = gspread.authorize(credentials)
 sheet = gc.open("webhook_instagram_logs").sheet1
 
+# ❌ Lista de exclusão
 def ler_lista_exclusao():
     try:
         with open("excluir_usuarios.txt", "r") as f:
@@ -38,13 +41,7 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-def gerar_appsecret_proof(token, app_secret):
-    return hmac.new(
-        key=app_secret.encode('utf-8'),
-        msg=token.encode('utf-8'),
-        digestmod=hashlib.sha256
-    ).hexdigest()
-
+# 🧠 Classificação com GPT-3.5
 def classificar_sentimento(texto):
     try:
         response = openai.ChatCompletion.create(
@@ -61,6 +58,7 @@ def classificar_sentimento(texto):
         print("Erro ao classificar sentimento:", e)
         return "neutro"
 
+# ✍️ Geração de resposta
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
 
@@ -84,33 +82,46 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
 
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
+        base = base.replace("https://api.whatsapp.com/...", "link da bio")
 
     return base[:2200] if tipo == "comentario" else base[:1000]
+
+# 📬 Envio com appsecret_proof
+
+def gerar_appsecret_proof(token, app_secret):
+    return hmac.new(
+        key=app_secret.encode('utf-8'),
+        msg=token.encode('utf-8'),
+        digestmod=hashlib.sha256
+    ).hexdigest()
 
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
         proof = gerar_appsecret_proof(INSTAGRAM_TOKEN, APP_SECRET)
 
         if tipo == "comentario" and comment_id:
-            url = f"https://graph.facebook.com/v19.0/{comment_id}/replies?appsecret_proof={proof}"
+            url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
             r = requests.post(url, data={
                 "message": resposta,
-                "access_token": INSTAGRAM_TOKEN
+                "access_token": INSTAGRAM_TOKEN,
+                "appsecret_proof": proof
             })
             print("📤 Comentário enviado:", r.status_code, r.text)
 
         elif tipo == "direct" and username:
-            url = f"https://graph.facebook.com/v19.0/me/messages?appsecret_proof={proof}"
+            url = "https://graph.facebook.com/v19.0/me/messages"
             r = requests.post(url, json={
                 "messaging_type": "RESPONSE",
                 "recipient": {"id": username},
                 "message": {"text": resposta},
-                "access_token": INSTAGRAM_TOKEN
+                "access_token": INSTAGRAM_TOKEN,
+                "appsecret_proof": proof
             })
             print("📤 Direct enviado:", r.status_code, r.text)
     except Exception as e:
         print("Erro ao enviar resposta:", e)
 
+# ⏱️ Limite de envio por hora
 def pode_responder(tipo):
     agora = time.time()
     respostas_enviadas[tipo] = [t for t in respostas_enviadas[tipo] if agora - t < 3600]
@@ -120,6 +131,7 @@ def pode_responder(tipo):
 def registrar_resposta(tipo):
     respostas_enviadas[tipo].append(time.time())
 
+# 🌐 Webhook
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
     if request.method == "GET":
@@ -169,7 +181,7 @@ def webhook():
             ])
 
             if username in ler_lista_exclusao():
-                print(f"🚫 Usuário ignorado (lista): {username}")
+                print(f"❌ Ignorado (lista): {username}")
                 return "Ignorado", 200
 
             if pode_responder(tipo):
@@ -177,16 +189,20 @@ def webhook():
                 interacoes_por_usuario[username] = interacoes
                 sentimento = classificar_sentimento(mensagem)
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
-                print(f"🤖 Resposta ({tipo}): {resposta}")
+                print(f"🧐 Resposta ({tipo}): {resposta}")
                 registrar_resposta(tipo)
                 enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
             else:
-                print(f"⚠️ Limite de {tipo}s por hora atingido. Ignorando.")
+                print(f"⚠️ Limite de {tipo}s por hora atingido.")
 
         except Exception as e:
-            print("❌ Erro geral:", str(e))
+            print("Erro geral:", str(e))
 
     return "OK", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
