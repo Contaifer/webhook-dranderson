@@ -20,23 +20,23 @@ DELAY_ENTRE_RESPOSTAS = 3  # segundos
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
 
-# Ajuste as variáveis de ambiente conforme seu Render ou outro ambiente
+# Lê as variáveis do ambiente (Render, Heroku etc.)
 openai.api_key = os.environ["OPENAI_API_KEY"]
 INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
 APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
 
-# Configuração para acessar Google Sheets
+# Configuração para acessar o Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
 gc = gspread.authorize(credentials)
 sheet = gc.open("webhook_instagram_logs").sheet1
 
+
 def ler_lista_exclusao():
     """
     Lê um arquivo excluir_usuarios.txt (um por linha)
-    e retorna uma lista de usernames a serem ignorados
-    pelo robô.
+    e retorna uma lista de usernames a serem ignorados pelo robô.
     """
     try:
         with open("excluir_usuarios.txt", "r") as f:
@@ -44,10 +44,11 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
+
 def classificar_sentimento(texto):
     """
-    Exemplo de chamada ao endpoint de chat do OpenAI na versão >=1.0.0
-    Usando openai.ChatCompletion.create (nova sintaxe).
+    Exemplo de chamada ao endpoint de chat do OpenAI (>=1.0.0)
+    usando openai.ChatCompletion.create() com o modelo gpt-3.5-turbo.
     """
     try:
         response = openai.ChatCompletion.create(
@@ -71,6 +72,7 @@ def classificar_sentimento(texto):
     except Exception as e:
         print("Erro ao classificar sentimento:", e)
         return "neutro"
+
 
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
@@ -109,7 +111,7 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
             "pra eu poder entender melhor."
         )
 
-    # Se for direct e atingiu certo número de interações, adiciona CTA
+    # Se for direct e atingir certo número de interações, adiciona CTA
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
         base += (
             " Se quiser conversar com alguém da minha equipe, clique aqui: "
@@ -117,26 +119,27 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
             "20informações%20sobre%20as%20consultas%20com%20o%20Dr.%20Anderson%20Contaifer"
         )
 
-    # Se for comentário, substituir link (só exemplo):
+    # Se for comentário, substituir link (apenas exemplo):
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
 
-    # Limite de tamanho pro Instagram
+    # Limite de tamanho para cada tipo no Instagram
     if tipo == "comentario":
         return base[:2200]
     else:
         return base[:1000]
 
+
 def gerar_appsecret_proof(token, secret):
     """
-    Gera o appsecret_proof para a Graph API,
-    usando HMAC-SHA256(token + secret).
+    Gera o appsecret_proof para a Graph API (HMAC-SHA256).
     """
     return hashlib.sha256((token + secret).encode('utf-8')).hexdigest()
 
+
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     """
-    Envia resposta para comentário ou DM (direct) no Instagram,
+    Envia resposta para comentário ou direct no Instagram,
     usando a Graph API com appsecret_proof.
     """
     try:
@@ -144,22 +147,25 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
 
         if tipo == "comentario" and comment_id:
             url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
-            r = requests.post(url, data={
+            payload = {
                 "message": resposta,
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
-            })
+            }
+            r = requests.post(url, data=payload)
+
         elif tipo == "direct" and username:
             url = "https://graph.facebook.com/v19.0/me/messages"
-            r = requests.post(url, json={
+            payload = {
                 "messaging_type": "RESPONSE",
                 "recipient": {"id": username},
                 "message": {"text": resposta},
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
-            })
+            }
+            r = requests.post(url, json=payload)
         else:
-            print("⚠️ Tipo inválido ou dados faltando.")
+            print("⚠️ Tipo inválido ou dados faltando para enviar resposta.")
             return False
 
         if r.status_code != 200:
@@ -173,31 +179,33 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
         print("❌ Erro ao enviar resposta:", e)
         return False
 
+
 def pode_responder(tipo, username):
     """
-    Controla o limite de respostas por hora (tanto para direct quanto para comentário).
+    Verifica se ainda podemos responder (limite de X por hora).
     """
     agora = time.time()
     historico = respostas_enviadas[tipo].get(username, [])
-    # Limpa as tentativas antigas (mais de 1h)
+    # Remove respostas antigas de mais de 1 hora
     historico = [t for t in historico if agora - t < 3600]
     respostas_enviadas[tipo][username] = historico
 
     limite = MAX_COMENTARIOS_POR_HORA if tipo == "comentario" else MAX_DIRECTS_POR_HORA
     return len(historico) < limite
 
+
 def registrar_resposta(tipo, username):
+    """
+    Marca o horário em que acabamos de responder,
+    para controle de limite/hora.
+    """
     respostas_enviadas[tipo].setdefault(username, []).append(time.time())
+
 
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def webhook():
-    """
-    Endpoint principal do webhook, que recebe eventos de
-    comentários e mensagens do Instagram, e responde conforme
-    a lógica.
-    """
     if request.method == "GET":
-        # Verificação do Webhook (setup inicial)
+        # Validação inicial do webhook
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
@@ -206,7 +214,7 @@ def webhook():
         return "Unauthorized", 403
 
     if request.method == "POST":
-        # Recebe um evento do Instagram
+        # Recebe evento do Instagram
         data = request.get_json()
         print("🔔 Evento recebido:")
         print(json.dumps(data, indent=2))
@@ -221,7 +229,7 @@ def webhook():
             if "entry" in data:
                 entry = data["entry"][0]
                 if "changes" in entry:
-                    # Evento de comentário
+                    # É um evento de comentário no IG
                     tipo = "comentario"
                     value = entry["changes"][0]["value"]
                     username = value.get("from", {}).get("username", "").lower()
@@ -229,42 +237,43 @@ def webhook():
                     id_post = value.get("media", {}).get("id", "")
                     comment_id = value.get("id", "")
                 elif "messaging" in entry:
-                    # Evento de direct (mensagem)
+                    # É um evento de direct
                     tipo = "direct"
                     messaging = entry["messaging"][0]
                     mensagem = messaging.get("message", {}).get("text", "")
                     username = messaging.get("sender", {}).get("id", "")
 
-            # Registra tudo no Google Sheets
+            # Loga no Google Sheets
             sheet.append_row([
                 datetime.now().isoformat(),
                 tipo,
                 username,
                 mensagem,
                 id_post,
-                "",  # espaço para eventual "emoji" ou outra info
+                "",  # espaço para emoji ou outra info
                 json.dumps(data)
             ])
 
-            # Verifica se o usuário está na lista de exclusão
+            # Se o username está no arquivo de exclusão, ignoramos
             if username in ler_lista_exclusao():
                 print(f"🚫 Usuário ignorado (lista): {username}")
                 return "Ignorado", 200
 
-            # Checa se pode responder (limite por hora)
+            # Verifica se ainda podemos responder (limite/h)
             if pode_responder(tipo, username):
                 interacoes = interacoes_por_usuario.get(username, 0) + 1
                 interacoes_por_usuario[username] = interacoes
 
-                # Tenta classificar sentimento via OpenAI
+                # Classifica sentimento
                 sentimento = classificar_sentimento(mensagem)
+                # Gera a resposta final
                 resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
                 print(f"🤖 Resposta ({tipo}): {resposta}")
 
-                # Dá um delay pequeno antes de enviar
+                # Delay curto antes de enviar
                 time.sleep(DELAY_ENTRE_RESPOSTAS)
 
-                # Envia
+                # Tenta enviar
                 sucesso = enviar_resposta_instagram(
                     tipo,
                     username,
@@ -281,6 +290,6 @@ def webhook():
 
     return "OK", 200
 
+
 if __name__ == "__main__":
-    # Inicia a aplicação Flask
     app.run(host="0.0.0.0", port=8080)
