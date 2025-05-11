@@ -174,6 +174,8 @@ def webhook():
                     mensagem = value.get("text", "")
                     id_post = value.get("media", {}).get("id", "")
                     comment_id = value.get("id", "")
+                    print(f"🧩 Dados do comentário - username: {username}, comment_id: {comment_id}, mensagem: {mensagem}")
+
                 elif "messaging" in entry:
                     tipo = "direct"
                     messaging = entry["messaging"][0]
