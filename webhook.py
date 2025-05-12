@@ -121,6 +121,8 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
             print("⚠️ Tipo inválido ou dados faltando para enviar resposta.")
             return False
 
+        print(f"📤 Status da resposta ({tipo}):", r.status_code, r.text)
+
         if r.status_code != 200:
             print(f"❌ Falha ao enviar {tipo.upper()}: {r.status_code} - {r.text}")
             return False
@@ -174,8 +176,7 @@ def webhook():
                     mensagem = value.get("text", "")
                     id_post = value.get("media", {}).get("id", "")
                     comment_id = value.get("id", "")
-                    print(f"🧩 Dados do comentário - username: {username}, comment_id: {comment_id}, mensagem: {mensagem}")
-
+                    print(f"🧩 Comentário - username: {username}, comment_id: {comment_id}, mensagem: {mensagem}")
                 elif "messaging" in entry:
                     tipo = "direct"
                     messaging = entry["messaging"][0]
@@ -190,6 +191,9 @@ def webhook():
                 print(f"🚫 Usuário ignorado (lista): {username}")
                 return "Ignorado", 200
 
+            print(f"✅ Vai tentar responder para: {username}")
+            print(f"🧠 Mensagem recebida: {mensagem}")
+
             if pode_responder(tipo, username):
                 interacoes = interacoes_por_usuario.get(username, 0) + 1
                 interacoes_por_usuario[username] = interacoes
@@ -198,6 +202,7 @@ def webhook():
                 print(f"🤖 Resposta ({tipo}): {resposta}")
                 time.sleep(DELAY_ENTRE_RESPOSTAS)
                 sucesso = enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
+                print(f"📬 Resultado do envio: {sucesso}")
                 if sucesso:
                     registrar_resposta(tipo, username)
             else:
@@ -210,4 +215,3 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
