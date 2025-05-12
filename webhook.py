@@ -92,7 +92,15 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
     return base[:2200] if tipo == "comentario" else base[:1000]
 
 def gerar_appsecret_proof(token, secret):
-    return hashlib.sha256((token + secret).encode('utf-8')).hexdigest()
+    import hmac
+
+def gerar_appsecret_proof(token, secret):
+    return hmac.new(
+        key=secret.encode('utf-8'),
+        msg=token.encode('utf-8'),
+        digestmod=hashlib.sha256
+    ).hexdigest()
+
 
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
