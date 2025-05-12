@@ -90,6 +90,9 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
     if tipo == "comentario":
         base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
 
+    if not base.strip():
+        base = "Recebi sua mensagem. Se quiser conversar melhor, me chama no direct. Lá consigo te ouvir com mais privacidade."
+
     return base[:2200] if tipo == "comentario" else base[:1000]
 
 def gerar_appsecret_proof(token, secret):
