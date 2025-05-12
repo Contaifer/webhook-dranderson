@@ -16,7 +16,7 @@ VERIFY_TOKEN = "robodranderson123"
 MAX_COMENTARIOS_POR_HORA = 20
 MAX_DIRECTS_POR_HORA = 40
 INTERACOES_ANTES_CTA = 3
-DELAY_ENTRE_RESPOSTAS = 10  # segundos (aumentado para evitar bloqueio)
+DELAY_ENTRE_RESPOSTAS = 3  # segundos
 
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
@@ -107,8 +107,9 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
 
         if tipo == "comentario" and comment_id:
             if comment_id in comentarios_respondidos:
-                print(f"🚫 Comentário {comment_id} já foi respondido. Pulando...")
+                print(f"🚫 Comentário {comment_id} já foi respondido. Ignorando.")
                 return False
+
             url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
             payload = {
                 "message": resposta,
@@ -116,6 +117,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 "appsecret_proof": proof
             }
             r = requests.post(url, data=payload)
+
             if r.status_code == 200:
                 comentarios_respondidos.add(comment_id)
 
@@ -128,8 +130,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
             }
-            r = requests.post(url, json=payload)
-        else:
+            r = requests.post(url, json=payload)          else:
             print("⚠️ Tipo inválido ou dados faltando para enviar resposta.")
             return False
 
@@ -145,4 +146,88 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("❌ Erro ao enviar resposta:", e)
         return False
+
+def pode_responder(tipo, username):
+    agora = time.time()
+    historico = respostas_enviadas[tipo].get(username, [])
+    historico = [t for t in historico if agora - t < 3600]
+    respostas_enviadas[tipo][username] = historico
+    limite = MAX_COMENTARIOS_POR_HORA if tipo == "comentario" else MAX_DIRECTS_POR_HORA
+    return len(historico) < limite
+
+def registrar_resposta(tipo, username):
+    respostas_enviadas[tipo].setdefault(username, []).append(time.time())
+
+@app.route("/", methods=["GET", "POST", "HEAD"])
+def webhook():
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == VERIFY_TOKEN:
+            return challenge, 200
+        return "Unauthorized", 403
+
+    if request.method == "POST":
+        data = request.get_json()
+        print("🔔 Evento recebido:")
+        print(json.dumps(data, indent=2))
+
+        try:
+            tipo = "desconhecido"
+            username = ""
+            mensagem = ""
+            id_post = ""
+            comment_id = ""
+
+            if "entry" in data:
+                entry = data["entry"][0]
+                if "changes" in entry:
+                    tipo = "comentario"
+                    value = entry["changes"][0]["value"]
+                    username = value.get("from", {}).get("username", "").lower()
+                    mensagem = value.get("text", "")
+                    id_post = value.get("media", {}).get("id", "")
+                    comment_id = value.get("id", "")
+                    print(f"🧩 Comentário - username: {username}, comment_id: {comment_id}, mensagem: {mensagem}")
+                elif "messaging" in entry:
+                    tipo = "direct"
+                    messaging = entry["messaging"][0]
+                    mensagem = messaging.get("message", {}).get("text", "")
+                    username = messaging.get("sender", {}).get("id", "")
+
+            sheet.append_row([
+                datetime.now().isoformat(), tipo, username, mensagem, id_post, "", json.dumps(data)
+            ])
+
+            if username in ler_lista_exclusao():
+                print(f"🚫 Usuário ignorado (lista): {username}")
+                return "Ignorado", 200
+
+            print(f"✅ Vai tentar responder para: {username}")
+            print(f"🧠 Mensagem recebida: {mensagem}")
+
+            if pode_responder(tipo, username):
+                interacoes = interacoes_por_usuario.get(username, 0) + 1
+                interacoes_por_usuario[username] = interacoes
+                sentimento = classificar_sentimento(mensagem)
+                resposta = gerar_resposta(mensagem, sentimento, tipo, interacoes)
+                print(f"🤖 Resposta ({tipo}): {resposta}")
+                time.sleep(DELAY_ENTRE_RESPOSTAS)
+                sucesso = enviar_resposta_instagram(tipo, username, resposta, comment_id if tipo == "comentario" else None)
+                print(f"📬 Resultado do envio: {sucesso}")
+                if sucesso:
+                    registrar_resposta(tipo, username)
+            else:
+                print(f"⚠️ Limite de {tipo}s por hora para {username} atingido. Ignorando.")
+
+        except Exception as e:
+            print("❌ Erro geral:", str(e))
+
+    return "OK", 200
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+    app.run(host="0.0.0.0", port=8080)
 
