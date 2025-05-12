@@ -7,6 +7,7 @@ import openai
 import requests
 import hashlib
 import hmac
+import random
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -21,6 +22,14 @@ DELAY_ENTRE_RESPOSTAS = 3
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
 COMENTARIOS_JSON = "comentarios_respondidos.json"
+
+CTAS = [
+    " Se quiser continuar essa conversa, me chama no direct.",
+    " Podemos falar mais sobre isso no direct, se quiser.",
+    " Qualquer coisa, estou no direct.",
+    " Me chama no direct que te explico melhor com calma.",
+    " No direct consigo te ouvir melhor. Me chama por lá."
+]
 
 def carregar_comentarios_respondidos():
     try:
@@ -53,14 +62,32 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
+def classificar_sentimento(texto):
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Classifique a mensagem como: positivo, neutro, negativo, sensível ou agressivo."},
+                {"role": "user", "content": texto}
+            ],
+            temperature=0.3,
+            max_tokens=10
+        )
+        return response.choices[0].message.content.strip().lower()
+    except Exception as e:
+        print("Erro ao classificar sentimento:", e)
+        return "neutro"
+
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
-    if sentimento in ["positivo", "neutro", "sensível", "negativo"] and len(texto) < 10:
-        base = "Obrigado pelo seu comentário. Me chama no direct que posso te explicar com mais calma e privacidade."
+    if sentimento == "agressivo":
+        base = "Esse tipo de comentário não contribui para um espaço saudável. Convido você a refletir sobre sua abordagem."
+    elif sentimento in ["positivo", "neutro", "sensível", "negativo"] and len(texto) < 10:
+        base = "Obrigado pelo seu comentário."
     else:
         try:
             prompt = [
-                {"role": "system", "content": "Você é um médico especialista em saúde mental e clínica médica. Responda de forma empática, clara e em até 4 linhas."},
+                {"role": "system", "content": "Você é um médico especialista em saúde mental e clínica médica. Responda de forma empática, clara, direta e com no máximo 4 linhas. Se o comentário for agressivo, reaja como um humano que discorda de forma firme, mas respeitosa."},
                 {"role": "user", "content": texto}
             ]
             response = openai.chat.completions.create(
@@ -72,9 +99,10 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
             base = response.choices[0].message.content.strip()
         except Exception as e:
             print("Erro ao gerar resposta generativa:", e)
-            base = "Obrigado por comentar. Me chama no direct que posso explicar melhor com calma."
+            base = "Obrigado por comentar."
 
-        base += " Se quiser conversar mais sobre isso, me chama no direct."
+    if tipo == "comentario":
+        base += random.choice(CTAS)
 
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
         base += (
@@ -83,22 +111,6 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
         )
 
     return base[:2200] if tipo == "comentario" else base[:1000]
-
-def classificar_sentimento(texto):
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Classifique a mensagem como: positivo, neutro, negativo ou sensível."},
-                {"role": "user", "content": texto}
-            ],
-            temperature=0.3,
-            max_tokens=10
-        )
-        return response.choices[0].message.content.strip().lower()
-    except Exception as e:
-        print("Erro ao classificar sentimento:", e)
-        return "neutro"
 
 def gerar_appsecret_proof(token, secret):
     return hmac.new(
