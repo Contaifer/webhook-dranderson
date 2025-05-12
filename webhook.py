@@ -20,12 +20,12 @@ DELAY_ENTRE_RESPOSTAS = 3  # segundos
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
 
-# Lê as variáveis do ambiente (Render, Heroku etc.)
+# Lê as variáveis do ambiente (.env ou painel do Render)
 openai.api_key = os.environ["OPENAI_API_KEY"]
 INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
 APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
 
-# Configuração para acessar o Google Sheets
+# Acesso ao Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
@@ -212,6 +212,12 @@ def webhook():
             print("❌ Erro geral:", str(e))
 
     return "OK", 200
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+    app.run(host="0.0.0.0", port=8080)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
