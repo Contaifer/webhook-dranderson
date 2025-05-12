@@ -2,7 +2,7 @@ flask==3.1.0
 gspread==6.2.0
 oauth2client==4.1.3
 requests==2.32.3
-
-# Usa a nova versão do openai (1.0.0 ou superior)
 openai>=1.0.0
+python-dotenv==1.0.1
+gunicorn==21.2.0
 
