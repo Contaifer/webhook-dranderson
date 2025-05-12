@@ -130,7 +130,9 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 "access_token": INSTAGRAM_TOKEN,
                 "appsecret_proof": proof
             }
-            r = requests.post(url, json=payload)          else:
+            r = requests.post(url, json=payload)
+
+        else:
             print("⚠️ Tipo inválido ou dados faltando para enviar resposta.")
             return False
 
@@ -146,7 +148,6 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     except Exception as e:
         print("❌ Erro ao enviar resposta:", e)
         return False
-
 def pode_responder(tipo, username):
     agora = time.time()
     historico = respostas_enviadas[tipo].get(username, [])
@@ -230,4 +231,3 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
     app.run(host="0.0.0.0", port=8080)
-
