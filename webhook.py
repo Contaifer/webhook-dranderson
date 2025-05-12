@@ -24,11 +24,16 @@ interacoes_por_usuario = {}
 COMENTARIOS_JSON = "comentarios_respondidos.json"
 
 CTAS = [
-    " Se quiser continuar essa conversa, me chama no direct.",
-    " Podemos falar mais sobre isso no direct, se quiser.",
-    " Qualquer coisa, estou no direct.",
-    " Me chama no direct que te explico melhor com calma.",
-    " No direct consigo te ouvir melhor. Me chama por lá."
+    "Se quiser conversar melhor, me chama no direct.",
+    "Me manda um direct se quiser falar mais sobre isso.",
+    "A gente pode continuar essa troca no direct, se fizer sentido pra você.",
+    "Se sentir vontade de conversar, estarei no direct.",
+    "No direct eu consigo ouvir com mais atenção, se quiser seguir por lá.",
+    "Posso te explicar melhor com calma no direct, se quiser.",
+    "Se fizer sentido pra você, me chama no direct.",
+    "Podemos seguir essa conversa no direct com mais privacidade.",
+    "Tô por aqui se quiser continuar essa troca no direct.",
+    "Quando quiser, é só me chamar no direct."
 ]
 
 def carregar_comentarios_respondidos():
