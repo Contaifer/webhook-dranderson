@@ -20,7 +20,6 @@ DELAY_ENTRE_RESPOSTAS = 3
 
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
-
 COMENTARIOS_JSON = "comentarios_respondidos.json"
 
 def carregar_comentarios_respondidos():
@@ -54,44 +53,28 @@ def ler_lista_exclusao():
     except FileNotFoundError:
         return []
 
-def classificar_sentimento(texto):
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Classifique a seguinte mensagem como: positivo, neutro, negativo ou sensível."},
-                {"role": "user", "content": texto}
-            ],
-            temperature=0.4,
-            max_tokens=10
-        )
-        return response.choices[0].message.content.strip().lower()
-    except Exception as e:
-        print("Erro ao classificar sentimento:", e)
-        return "neutro"
-
 def gerar_resposta(texto, sentimento, tipo, interacoes):
     base = ""
+    if sentimento in ["positivo", "neutro", "sensível", "negativo"] and len(texto) < 10:
+        base = "Obrigado pelo seu comentário. Me chama no direct que posso te explicar com mais calma e privacidade."
+    else:
+        try:
+            prompt = [
+                {"role": "system", "content": "Você é um médico especialista em saúde mental e clínica médica. Responda de forma empática, clara e em até 4 linhas."},
+                {"role": "user", "content": texto}
+            ]
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=prompt,
+                temperature=0.6,
+                max_tokens=300
+            )
+            base = response.choices[0].message.content.strip()
+        except Exception as e:
+            print("Erro ao gerar resposta generativa:", e)
+            base = "Obrigado por comentar. Me chama no direct que posso explicar melhor com calma."
 
-    if "consulta" in texto.lower() or "atendimento" in texto.lower():
-        base = (
-            "Sou médico especialista em clínica médica (RQE 18790), com 13 anos de experiência. "
-            "Ajudo pessoas que passaram por relacionamentos abusivos a se regularem emocionalmente "
-            "e superarem sintomas físicos e psicológicos do trauma, como ansiedade, insônia, confusão mental e hipervigilância."
-        )
-    elif "não tenho dinheiro" in texto.lower() or "não posso pagar" in texto.lower():
-        base = (
-            "Entendo sua situação. Uma alternativa é o curso 'Quebrando as Algemas' com 50% de desconto usando o cupom **MQA50**. "
-            "O acesso é por 1 ano e a renovação é automática (você pode cancelar na Hotmart a qualquer momento)."
-        )
-    elif sentimento == "sensível":
-        base = "Recebi sua mensagem com atenção. O que você sente é real e merece cuidado. Se quiser conversar, estou aqui."
-    elif sentimento == "negativo":
-        base = "Entendo que esse momento esteja difícil. Se precisar de uma direção, posso te orientar com cuidado e respeito."
-    elif sentimento == "positivo":
-        base = "Obrigado pela sua mensagem! Se quiser entender melhor como posso te ajudar, posso te explicar com calma."
-    elif sentimento == "neutro":
-        base = "Li sua mensagem. Se quiser me contar mais, me chama no direct. Lá consigo te ouvir melhor com privacidade."
+        base += " Se quiser conversar mais sobre isso, me chama no direct."
 
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
         base += (
@@ -99,13 +82,23 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
             "https://api.whatsapp.com/send?phone=5527996677672&text=Olá!%20Gostaria%20de%20mais%20informações%20sobre%20as%20consultas%20com%20o%20Dr.%20Anderson%20Contaifer"
         )
 
-    if tipo == "comentario":
-        base = base.replace("www.quebrandoasalgemas.com.br", "link da bio")
-
-    if not base.strip():
-        base = "Recebi sua mensagem. Se quiser conversar melhor, me chama no direct. Lá consigo te ouvir com mais privacidade."
-
     return base[:2200] if tipo == "comentario" else base[:1000]
+
+def classificar_sentimento(texto):
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Classifique a mensagem como: positivo, neutro, negativo ou sensível."},
+                {"role": "user", "content": texto}
+            ],
+            temperature=0.3,
+            max_tokens=10
+        )
+        return response.choices[0].message.content.strip().lower()
+    except Exception as e:
+        print("Erro ao classificar sentimento:", e)
+        return "neutro"
 
 def gerar_appsecret_proof(token, secret):
     return hmac.new(
@@ -207,7 +200,7 @@ def webhook():
                     print(f"🧩 Comentário - username: {username}, comment_id: {comment_id}, mensagem: {mensagem}")
 
                     if username == "drandersoncontaifer":
-                        print("🛑 Comentário foi feito por mim mesmo. Ignorando.")
+                        print("🛑 Comentário feito por mim mesmo. Ignorando.")
                         return "Ignorado", 200
 
                 elif "messaging" in entry:
