@@ -21,12 +21,12 @@ DELAY_ENTRE_RESPOSTAS = 3  # segundos
 respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
 
-# Lê as variáveis do ambiente (.env ou painel do Render)
+# Lê variáveis de ambiente
 openai.api_key = os.environ["OPENAI_API_KEY"]
 INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
 APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
 
-# Acesso ao Google Sheets
+# Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
@@ -79,7 +79,7 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
     elif sentimento == "positivo":
         base = "Obrigado pela sua mensagem! Se quiser entender melhor como posso te ajudar, posso te explicar com calma."
     elif sentimento == "neutro":
-        base = "Li sua mensagem. Me conta um pouco mais do que você está vivendo pra eu poder entender melhor."
+        base = "Li sua mensagem. Se quiser me contar mais, me chama no direct. Lá consigo te ouvir melhor com privacidade."
 
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
         base += (
@@ -93,15 +93,11 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
     return base[:2200] if tipo == "comentario" else base[:1000]
 
 def gerar_appsecret_proof(token, secret):
-    import hmac
-
-def gerar_appsecret_proof(token, secret):
     return hmac.new(
         key=secret.encode('utf-8'),
         msg=token.encode('utf-8'),
         digestmod=hashlib.sha256
     ).hexdigest()
-
 
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
@@ -227,6 +223,3 @@ if __name__ == "__main__":
     load_dotenv()
     app.run(host="0.0.0.0", port=8080)
 
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
