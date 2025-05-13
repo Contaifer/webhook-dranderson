@@ -23,6 +23,11 @@ respostas_enviadas = {"comentario": {}, "direct": {}}
 interacoes_por_usuario = {}
 COMENTARIOS_JSON = "comentarios_respondidos.json"
 
+INSTAGRAM_COMMENT_TOKEN = os.environ["INSTAGRAM_COMMENT_TOKEN"]
+INSTAGRAM_DM_TOKEN = os.environ["INSTAGRAM_DM_TOKEN"]
+APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
+openai.api_key = os.environ["OPENAI_API_KEY"]
+
 CTAS = [
     "Se quiser conversar melhor, me chama no direct.",
     "Me manda um direct se quiser falar mais sobre isso.",
@@ -49,10 +54,6 @@ def salvar_comentario_respondido(comment_id):
         json.dump(list(comentarios_respondidos), f)
 
 comentarios_respondidos = carregar_comentarios_respondidos()
-
-openai.api_key = os.environ["OPENAI_API_KEY"]
-INSTAGRAM_TOKEN = os.environ["INSTAGRAM_TOKEN"]
-APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
 
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
@@ -107,7 +108,7 @@ def gerar_resposta(texto, sentimento, tipo, interacoes):
             base = "Obrigado por comentar."
 
     if tipo == "comentario":
-        base += random.choice(CTAS)
+        base += " " + random.choice(CTAS)
 
     if tipo == "direct" and interacoes >= INTERACOES_ANTES_CTA:
         base += (
@@ -126,7 +127,12 @@ def gerar_appsecret_proof(token, secret):
 
 def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
     try:
-        proof = gerar_appsecret_proof(INSTAGRAM_TOKEN, APP_SECRET)
+        if tipo == "comentario":
+            token = INSTAGRAM_COMMENT_TOKEN
+        else:
+            token = INSTAGRAM_DM_TOKEN
+
+        proof = gerar_appsecret_proof(token, APP_SECRET)
 
         if tipo == "comentario" and comment_id:
             if comment_id in comentarios_respondidos:
@@ -136,7 +142,7 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
             url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
             payload = {
                 "message": resposta,
-                "access_token": INSTAGRAM_TOKEN,
+                "access_token": token,
                 "appsecret_proof": proof
             }
             r = requests.post(url, data=payload)
@@ -145,12 +151,12 @@ def enviar_resposta_instagram(tipo, username, resposta, comment_id=None):
                 salvar_comentario_respondido(comment_id)
 
         elif tipo == "direct" and username:
-            url = "https://graph.facebook.com/v19.0/me/messages"
+            url = f"https://graph.facebook.com/v19.0/{username}/messages"
             payload = {
                 "messaging_type": "RESPONSE",
                 "recipient": {"id": username},
                 "message": {"text": resposta},
-                "access_token": INSTAGRAM_TOKEN,
+                "access_token": token,
                 "appsecret_proof": proof
             }
             r = requests.post(url, json=payload)
